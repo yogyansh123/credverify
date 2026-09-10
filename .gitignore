@@ -1,0 +1,60 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node / Build artifacts
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment and secrets (CRITICAL: Never commit credentials)
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+*.pem
+*.key
+*.cert
+
+# Python and Databases
+__pycache__/
+backend/__pycache__/
+*/__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+*.db
+*.sqlite
+*.sqlite3
+backend/credverify.db
+
+# Test caches and local runtimes
+.pytest_cache/
+backend/.pytest_cache/
+.coverage
+htmlcov/
+
+# Local file uploads and storage artifacts
+backend/uploads/
+backend/uploads/*
+!backend/uploads/.gitkeep
