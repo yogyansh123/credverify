@@ -15,13 +15,15 @@ import {
   ExternalLink,
   Award,
   RefreshCw,
-  UploadCloud
+  UploadCloud,
+  Sparkles
 } from 'lucide-react';
 import { useAnimatedScore } from '../hooks/useAnimatedScore';
 
 export const VerificationReportPage = () => {
   const { 
     user, 
+    isLoggedIn,
     categoryScores, 
     claims, 
     documents, 
@@ -90,16 +92,115 @@ export const VerificationReportPage = () => {
   // Verification dataset exists ONLY when a real Resume exists AND analysis has been run
   const hasAnalysisRun = Boolean(
     hasResume &&
-    analysisMeta &&
-    analysisMeta.trustScore !== undefined &&
-    analysisMeta.trustScore !== null
+    ((analysisMeta && analysisMeta.trustScore !== undefined && analysisMeta.trustScore !== null) ||
+     (user?.trustScore !== undefined && user?.trustScore !== null && user?.trustScore > 0))
   );
+
+  const isRealAuthenticatedUser = Boolean(
+    isLoggedIn && 
+    user && 
+    user.id && 
+    !user.isDemo && 
+    user.name !== 'Priyan Sharma' &&
+    user.id !== 'usr_priyan_992' &&
+    !user.name?.toLowerCase().includes('priyan')
+  );
+
+  // If there is no authenticated user and no verification data, show clean unauthenticated state
+  if (!isRealAuthenticatedUser && !hasAnalysisRun) {
+    return (
+      <div style={{ maxWidth: '900px', margin: '60px auto 100px auto', padding: '0 24px' }}>
+        <div className="glass-card" style={{
+          padding: '48px 36px',
+          textAlign: 'center',
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%)',
+          borderRadius: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '20px',
+            boxShadow: '0 0 30px rgba(99, 102, 241, 0.4)'
+          }}>
+            <ShieldCheck size={36} color="#ffffff" />
+          </div>
+
+          <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#fff', marginBottom: '12px' }}>
+            Credential Verification Report
+          </h1>
+          <p style={{ color: '#94a3b8', fontSize: '1rem', maxWidth: '560px', margin: '0 auto 32px auto', lineHeight: 1.6 }}>
+            Sign in to access candidate verification audit reports, review corroborated credentials, and inspect cryptographic evidence.
+          </p>
+
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
+            <button 
+              id="unauth-report-signin-btn"
+              onClick={() => navigateTo('auth')} 
+              className="btn btn-primary"
+              style={{ padding: '12px 28px', fontSize: '0.95rem' }}
+            >
+              Sign In to Your Account
+            </button>
+            <button 
+              id="unauth-report-upload-btn"
+              onClick={() => navigateTo('upload')} 
+              className="btn btn-outline"
+              style={{ padding: '12px 24px', fontSize: '0.95rem' }}
+            >
+              <UploadCloud size={16} /> Upload Resume as New Candidate
+            </button>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '16px',
+            textAlign: 'left',
+            paddingTop: '28px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+          }}>
+            <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', color: '#818cf8', fontWeight: 700, fontSize: '0.9rem' }}>
+                <CheckCircle2 size={16} /> Employment Claims
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
+                Audit employment tenure, job titles, and employers verified against relieving letters.
+              </p>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', color: '#10b981', fontWeight: 700, fontSize: '0.9rem' }}>
+                <Award size={16} /> Official Credentials
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
+                Inspect cloud vendor certificates and degrees verified with cryptographic hashes.
+              </p>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', color: '#38bdf8', fontWeight: 700, fontSize: '0.9rem' }}>
+                <Sparkles size={16} /> Audit Trail
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
+                Trace exact evidence corroborations with full audit provenance.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Zero-evidence condition: when no non-resume supporting evidence is attached or 0 claims are verified
   const hasZeroEvidence = supportingEvidenceDocs.length === 0 || verifiedClaims.length === 0;
 
   const displayTrustScore = hasAnalysisRun
-    ? analysisMeta.trustScore
+    ? (analysisMeta?.trustScore ?? user?.trustScore ?? 0)
     : null;
 
   const animatedTrustScore = useAnimatedScore(displayTrustScore || 0, 400);
@@ -110,7 +211,7 @@ export const VerificationReportPage = () => {
   // Real backend analysis MUST take priority
   const displayCategoryScores = hasAnalysisRun && analysisMeta?.categoryScores && analysisMeta.categoryScores.length > 0
     ? analysisMeta.categoryScores
-    : [];
+    : (categoryScores && categoryScores.length > 0 ? categoryScores : []);
 
   const standardCategories = [
     "Identity Consistency",
@@ -140,7 +241,7 @@ export const VerificationReportPage = () => {
             Credential Verification Summary
           </h1>
           <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-            Generated on {user.verificationDate || 'Today'} • Subject: <strong>{reportSubjectName}</strong>
+            Generated on {user?.verificationDate || 'Today'} • Subject: <strong>{reportSubjectName}</strong>
           </p>
         </div>
 
@@ -153,7 +254,7 @@ export const VerificationReportPage = () => {
               disabled={isAnalyzing}
               title={hasAnalysisRun ? "Re-run analysis to incorporate all uploaded supporting credentials" : "Run verification analysis on uploaded resume"}
             >
-              <RefreshCw size={18} className={isAnalyzing ? 'pulse-glow' : ''} /> {isAnalyzing ? 'Analyzing...' : hasAnalysisRun ? 'Rerun Analysis' : 'Run Analysis'}
+              <RefreshCw size={18} className={isAnalyzing ? 'spin-slow' : ''} /> {isAnalyzing ? 'Analyzing...' : hasAnalysisRun ? 'Rerun Analysis' : 'Run Analysis'}
             </button>
           ) : (
             <button 
@@ -182,6 +283,30 @@ export const VerificationReportPage = () => {
           </button>
         </div>
       </div>
+
+      {/* IN-FLIGHT RE-ANALYSIS BANNER */}
+      {isAnalyzing && (
+        <div className="glass-card" style={{
+          padding: '16px 24px',
+          marginBottom: '24px',
+          background: 'rgba(99, 102, 241, 0.12)',
+          border: '1px solid rgba(99, 102, 241, 0.35)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          borderRadius: '12px'
+        }}>
+          <RefreshCw size={24} className="spin-slow" style={{ color: '#818cf8', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.95rem' }}>
+              Re-evaluating Credentials with Latest Evidence...
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+              Cross-referencing uploaded supporting credentials and updating verification scores in real time.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OVERALL SCORE & CATEGORY SCORE GRID */}
       <div style={{

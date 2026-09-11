@@ -10,14 +10,19 @@ export const AuthPage = () => {
   // Form fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('••••••••••••');
+  const [password, setPassword] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSignUp) {
-      await handleSignUp({ name: name || 'Candidate', email: email.trim(), role: selectedRole });
+      await handleSignUp({ 
+        name: name.trim() || 'Candidate', 
+        email: email.trim(), 
+        password: password, 
+        role: selectedRole 
+      });
     } else {
-      await handleLogin(selectedRole, email.trim(), name.trim());
+      await handleLogin(selectedRole, email.trim(), password);
     }
   };
 
@@ -175,9 +180,10 @@ export const AuthPage = () => {
             <input 
               type="password" 
               className="form-input" 
-              placeholder="••••••••••••" 
+              placeholder={isSignUp ? "Create a secure password (min. 6 chars)" : "Enter your account password"} 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              minLength={isSignUp ? 6 : 1}
               required
             />
           </div>
@@ -192,39 +198,23 @@ export const AuthPage = () => {
           </button>
         </form>
 
-        {/* Social Logins */}
+        {/* Security & Verification Notice */}
         <div style={{
           marginTop: '28px',
           paddingTop: '20px',
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
           textAlign: 'center'
         }}>
-          <span style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '16px' }}>
-            Or continue with OAuth Mock
-          </span>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-            <button 
-              onClick={() => handleLogin(selectedRole)}
-              className="btn btn-outline btn-sm"
-              style={{ justifyContent: 'center' }}
-            >
-              <Globe size={16} /> Google
-            </button>
-            <button 
-              onClick={() => handleLogin(selectedRole)}
-              className="btn btn-outline btn-sm"
-              style={{ justifyContent: 'center' }}
-            >
-              <Share2 size={16} color="#0077b5" /> LinkedIn
-            </button>
-            <button 
-              onClick={() => handleLogin(selectedRole)}
-              className="btn btn-outline btn-sm"
-              style={{ justifyContent: 'center' }}
-            >
-              <Key size={16} /> SSO
-            </button>
+          <div style={{ 
+            fontSize: '0.8rem', 
+            color: '#64748b', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: '8px' 
+          }}>
+            <Lock size={14} color="#6366f1" />
+            <span>End-to-End Cryptographically Isolated Credentials</span>
           </div>
         </div>
 

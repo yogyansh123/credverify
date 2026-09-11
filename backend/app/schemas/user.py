@@ -9,10 +9,12 @@ from pydantic import BaseModel, ConfigDict, field_validator
 class UserCreate(BaseModel):
     name: str
     email: str
+    password: Optional[str] = None
     role: str = "individual"
     headline: Optional[str] = None
     summary: Optional[str] = None
     avatar_url: Optional[str] = None
+
 
     @field_validator("role")
     @classmethod
@@ -28,6 +30,11 @@ class UserCreate(BaseModel):
         if not v.strip():
             raise ValueError("name must not be empty")
         return v.strip()
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
 
 
 class UserResponse(BaseModel):

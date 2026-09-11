@@ -58,3 +58,7 @@ htmlcov/
 backend/uploads/
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Root-level scratch/debug scripts and dev upload artifacts
+scratch/
+uploads/

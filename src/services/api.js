@@ -76,6 +76,13 @@ export const api = {
     });
   },
 
+  async loginUser(credentials) {
+    return request('/api/users/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials)
+    });
+  },
+
   async getUser(userId) {
     return request(`/api/users/${encodeURIComponent(userId)}`);
   },

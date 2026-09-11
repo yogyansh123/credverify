@@ -1,26 +1,157 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  currentUserMock, 
-  categoryScoresMock, 
-  uploadedDocumentsMock, 
-  claimsAnalysisMock, 
-  recruitersCandidatesMock,
-  verificationActivityMock
+  currentUserMock,
+  recruitersCandidatesMock
 } from '../data/mockData';
 import { api } from '../services/api';
 
 const AppContext = createContext();
 
+export const initialCandidateUser = {
+  id: null,
+  name: "Candidate",
+  email: "",
+  role: "individual",
+  headline: "Verified Professional",
+  summary: "",
+  avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250",
+  publicId: "",
+  trustScore: null,
+  profileCompletion: 0,
+  verifiedCount: 0,
+  flaggedCount: 0,
+  unsupportedCount: 0,
+  verificationDate: null,
+  isDemo: false
+};
+
+export const calculateMetricsFromClaims = (claimsList = []) => {
+  if (!Array.isArray(claimsList) || claimsList.length === 0) {
+    return {
+      trustScore: 40,
+      verifiedCount: 0,
+      mismatchCount: 0,
+      unsupportedCount: 0,
+      categoryScores: [
+        { category: "Identity Consistency", score: 50, status: "Under Review", description: "Identity requires government document check." },
+        { category: "Education Consistency", score: 40, status: "Under Review", description: "Academic records require graduation proof." },
+        { category: "Work Experience", score: 40, status: "Under Review", description: "Prior roles require employment verification." },
+        { category: "Certifications", score: 40, status: "Under Review", description: "Licensing requires certifying badge check." }
+      ]
+    };
+  }
+
+  const getVal = (item, key) => {
+    const v = item[key] || item[key === 'status' ? 'status_str' : key];
+    return String(v || '').trim();
+  };
+
+  const verified = claimsList.filter(c => getVal(c, 'status') === 'Match').length;
+  const mismatches = claimsList.filter(c => getVal(c, 'status') === 'Mismatch').length;
+  const unsupported = claimsList.filter(c => getVal(c, 'status') === 'Unsupported').length;
+
+  const identityScore = verified > 0 ? 95 : 50;
+
+  const eduClaims = claimsList.filter(c => getVal(c, 'category').toLowerCase().includes('edu'));
+  const eduScore = eduClaims.some(c => getVal(c, 'status') === 'Match') ? 90 : 40;
+
+  const expClaims = claimsList.filter(c => getVal(c, 'category').toLowerCase().includes('exp'));
+  let expScore = 40;
+  if (expClaims.some(c => getVal(c, 'status') === 'Mismatch')) {
+    expScore = 45;
+  } else if (expClaims.some(c => getVal(c, 'status') === 'Match')) {
+    expScore = 92;
+  }
+
+  const certClaims = claimsList.filter(c => getVal(c, 'category').toLowerCase().includes('cert'));
+  const certMatches = certClaims.filter(c => getVal(c, 'status') === 'Match').length;
+  const certScore = certMatches > 0 ? Math.min(98, 70 + (certMatches * 10)) : 40;
+
+  let trustScore = 40;
+  if (verified > 0) {
+    const weighted = (
+      (identityScore * 0.20) +
+      (eduScore * 0.25) +
+      (expScore * 0.30) +
+      (certScore * 0.25) -
+      (mismatches * 15)
+    );
+    trustScore = Math.max(45, Math.min(98, Math.round(weighted)));
+  }
+
+  const categoryScores = [
+    {
+      category: "Identity Consistency",
+      score: identityScore,
+      status: identityScore > 70 ? "Verified" : "Under Review",
+      description: identityScore > 70 ? "Cross-referenced across primary credential files." : "Pending formal government identity verification."
+    },
+    {
+      category: "Education Consistency",
+      score: eduScore,
+      status: eduScore > 70 ? "Verified" : "Under Review",
+      description: eduScore > 70 ? "Degree and university confirmed against transcript evidence." : "Degree credentials self-reported; degree transcript required."
+    },
+    {
+      category: "Work Experience",
+      score: expScore,
+      status: expScore > 70 ? "Verified" : expScore === 45 ? "Discrepancy" : "Under Review",
+      description: expScore > 70 ? "Employment and role confirmed with experience document." : expScore === 45 ? "Tenure variance identified." : "Self-reported roles require experience or relieving letter."
+    },
+    {
+      category: "Certifications",
+      score: certScore,
+      status: certScore > 70 ? "Verified" : "Under Review",
+      description: certMatches > 0 ? `${certMatches} certification(s) corroborated by uploaded certificate documents.` : "Certification claims require uploaded badge or certificate proof."
+    }
+  ];
+
+  return {
+    trustScore,
+    verifiedCount: verified,
+    mismatchCount: mismatches,
+    unsupportedCount: unsupported,
+    categoryScores
+  };
+};
+
 const getStoredUser = () => {
   try {
     const raw = localStorage.getItem('credverify_user_profile');
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Clean up legacy Priyan Sharma mock profile from local storage if present
+      if (
+        !parsed || 
+        !parsed.id || 
+        parsed.id === 'usr_priyan_992' || 
+        parsed.id === currentUserMock?.id ||
+        parsed.name === 'Priyan Sharma' || 
+        parsed.email === 'priyan.sharma@example.com' ||
+        parsed.isDemo ||
+        parsed.name?.toLowerCase().includes('priyan')
+      ) {
+        localStorage.removeItem('credverify_user_profile');
+        localStorage.removeItem('credverify_documents');
+        localStorage.removeItem('credverify_claims');
+        localStorage.removeItem('credverify_active_doc');
+        localStorage.removeItem('credverify_category_scores');
+        localStorage.removeItem('credverify_analysis_meta');
+        return null;
+      }
+      return parsed;
+    }
   } catch (e) {}
   return null;
 };
 
 const getStoredCategoryScores = () => {
   try {
+    const userProfile = getStoredUser();
+    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock?.id) {
+      try { localStorage.removeItem('credverify_category_scores'); } catch (e) {}
+      return null;
+    }
     const raw = localStorage.getItem('credverify_category_scores');
     if (raw) return JSON.parse(raw);
   } catch (e) {}
@@ -29,8 +160,21 @@ const getStoredCategoryScores = () => {
 
 const getStoredAnalysisMeta = () => {
   try {
+    const userProfile = getStoredUser();
+    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock?.id) {
+      try { localStorage.removeItem('credverify_analysis_meta'); } catch (e) {}
+      return null;
+    }
     const raw = localStorage.getItem('credverify_analysis_meta');
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Purge fake demo fallback / hardcoded 45% meta
+      if (parsed?.isFallback || parsed?.extractionMethod === 'demo_fallback') {
+        try { localStorage.removeItem('credverify_analysis_meta'); } catch (e) {}
+        return null;
+      }
+      return parsed;
+    }
   } catch (e) {}
   return null;
 };
@@ -38,7 +182,8 @@ const getStoredAnalysisMeta = () => {
 const getStoredDocuments = () => {
   try {
     const userProfile = getStoredUser();
-    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock.id) {
+    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock?.id) {
+      try { localStorage.removeItem('credverify_documents'); } catch (e) {}
       return [];
     }
     const raw = localStorage.getItem('credverify_documents');
@@ -55,7 +200,8 @@ const getStoredDocuments = () => {
 const getStoredClaims = () => {
   try {
     const userProfile = getStoredUser();
-    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock.id) {
+    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock?.id) {
+      try { localStorage.removeItem('credverify_claims'); } catch (e) {}
       return [];
     }
     const raw = localStorage.getItem('credverify_claims');
@@ -72,7 +218,8 @@ const getStoredClaims = () => {
 const getStoredActiveDoc = () => {
   try {
     const userProfile = getStoredUser();
-    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock.id) {
+    if (!userProfile || !userProfile.id || userProfile.isDemo || userProfile.id === currentUserMock?.id) {
+      try { localStorage.removeItem('credverify_active_doc'); } catch (e) {}
       return null;
     }
     const raw = localStorage.getItem('credverify_active_doc');
@@ -86,12 +233,27 @@ const getStoredActiveDoc = () => {
   return null;
 };
 
+const getInitialView = () => {
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname.replace(/^\/+/, '').toLowerCase();
+    const validViews = ['landing', 'auth', 'dashboard', 'upload', 'analysis', 'report', 'public-profile', 'recruiter'];
+    if (path && validViews.includes(path)) {
+      return path;
+    }
+    const stored = getStoredUser();
+    if (stored && stored.id && !stored.isDemo) {
+      return stored.role === 'recruiter' ? 'recruiter' : 'dashboard';
+    }
+  }
+  return 'landing';
+};
+
 export const AppProvider = ({ children }) => {
   const initialStoredUser = getStoredUser();
-  const [currentView, setCurrentView] = useState('landing'); // landing, auth, dashboard, upload, analysis, report, public-profile, recruiter
+  const [currentView, setCurrentView] = useState(getInitialView); // landing, auth, dashboard, upload, analysis, report, public-profile, recruiter
   const [authRole, setAuthRole] = useState(initialStoredUser?.role || 'individual'); // 'individual' or 'recruiter'
-  const [isLoggedIn, setIsLoggedIn] = useState(Boolean(initialStoredUser));
-  const [user, setUser] = useState(initialStoredUser || currentUserMock);
+  const [isLoggedIn, setIsLoggedIn] = useState(Boolean(initialStoredUser && initialStoredUser.id && !initialStoredUser.isDemo && initialStoredUser.id !== 'usr_priyan_992' && initialStoredUser.id !== currentUserMock?.id));
+  const [user, setUser] = useState(initialStoredUser || null);
   const [documents, setDocuments] = useState(getStoredDocuments);
   const [claims, setClaims] = useState(getStoredClaims);
   const [credentials, setCredentials] = useState([]);
@@ -320,19 +482,33 @@ export const AppProvider = ({ children }) => {
           setClaims(formattedClaims);
           try { localStorage.setItem('credverify_claims', JSON.stringify(formattedClaims)); } catch (e) {}
 
-          const vCount = formattedClaims.filter(c => c.status === 'Match').length;
-          const fCount = formattedClaims.filter(c => c.status === 'Mismatch').length;
-          const uCount = formattedClaims.filter(c => c.status === 'Unsupported').length;
+          const metrics = calculateMetricsFromClaims(formattedClaims);
+          setCategoryScores(metrics.categoryScores);
+          try { localStorage.setItem('credverify_category_scores', JSON.stringify(metrics.categoryScores)); } catch (e) {}
+
           setUser(prev => {
             const updated = {
               ...prev,
-              verifiedCount: vCount,
-              flaggedCount: fCount,
-              unsupportedCount: uCount,
+              trustScore: metrics.trustScore,
+              verifiedCount: metrics.verifiedCount,
+              flaggedCount: metrics.mismatchCount,
+              unsupportedCount: metrics.unsupportedCount,
             };
             try { localStorage.setItem('credverify_user_profile', JSON.stringify(updated)); } catch (e) {}
             return updated;
           });
+
+          const metaObj = {
+            extractionMethod: 'backend_sync',
+            isFallback: false,
+            analyzedDocId: resumeDoc.id,
+            analyzedDocName: resumeDoc.name || resumeDoc.original_name,
+            candidateName: user?.name || 'Candidate',
+            trustScore: metrics.trustScore,
+            categoryScores: metrics.categoryScores
+          };
+          setAnalysisMeta(metaObj);
+          try { localStorage.setItem('credverify_analysis_meta', JSON.stringify(metaObj)); } catch (e) {}
         }
       } else {
         setClaims([]);
@@ -355,7 +531,8 @@ export const AppProvider = ({ children }) => {
           localStorage.removeItem('credverify_category_scores');
           localStorage.removeItem('credverify_analysis_meta');
         } catch (e) {}
-        setUser(currentUserMock);
+        setUser(null);
+        setIsLoggedIn(false);
         setDocuments([]);
         setClaims([]);
         setActiveDocument(null);
@@ -363,10 +540,20 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Ref to always read the latest backendStatus inside the interval without
+  // re-subscribing (avoids the cascade: status change → effect teardown → new
+  // interval → immediate poll → status change → …)
+  const backendStatusRef = React.useRef(backendStatus);
+  useEffect(() => {
+    backendStatusRef.current = backendStatus;
+  }, [backendStatus]);
+
   // Initialize and check backend health on mount
   const checkHealth = useCallback(async () => {
+    // Only flash 'connecting' when we are not already confirmed connected.
+    // This prevents the navbar pill from flickering on every periodic poll.
+    setBackendStatus(prev => (prev === 'connected' ? 'connected' : 'connecting'));
     try {
-      setBackendStatus('connecting');
       const health = await api.getHealth();
       setBackendHealth(health);
       setBackendStatus('connected');
@@ -407,6 +594,7 @@ export const AppProvider = ({ children }) => {
                 isDemo: false
               };
               setUser(updated);
+              setIsLoggedIn(true);
               try { localStorage.setItem('credverify_user_profile', JSON.stringify(updated)); } catch (e) {}
               await syncUserBackendData(backendUser.id);
               return;
@@ -422,7 +610,8 @@ export const AppProvider = ({ children }) => {
                 localStorage.removeItem('credverify_category_scores');
                 localStorage.removeItem('credverify_analysis_meta');
               } catch (e) {}
-              setUser(currentUserMock);
+              setUser(null);
+              setIsLoggedIn(false);
               setDocuments([]);
               setClaims([]);
               setActiveDocument(null);
@@ -434,8 +623,7 @@ export const AppProvider = ({ children }) => {
             console.warn('Could not sync active stored user from backend:', fetchErr);
           }
         }
-        // If there is no stored user, do NOT seed currentUserMock onto the backend or overwrite user!
-        // We keep mockData purely for offline/demo fallback in memory.
+        // If there is no stored user, do NOT seed mock user onto the backend or overwrite user!
       } catch (userErr) {
         console.warn('Backend user synchronization notice:', userErr);
       }
@@ -445,8 +633,17 @@ export const AppProvider = ({ children }) => {
     }
   }, []);
 
+  // Single stable interval — only re-polls when not already connected.
+  // backendStatus is intentionally NOT in the dependency array; we read it
+  // via backendStatusRef to avoid the teardown/recreate cascade.
   useEffect(() => {
     checkHealth();
+    const interval = setInterval(() => {
+      if (backendStatusRef.current !== 'connected') {
+        checkHealth();
+      }
+    }, 15000); // 15s between retries is ample; 4s was too aggressive
+    return () => clearInterval(interval);
   }, [checkHealth]);
 
   const formatMismatchReason = (claim) => {
@@ -489,8 +686,29 @@ export const AppProvider = ({ children }) => {
       setRequestedClaim(null);
     }
     setCurrentView(view);
+    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+      const newPath = view === 'landing' ? '/' : `/${view}`;
+      if (window.location.pathname !== newPath) {
+        window.history.pushState(null, '', newPath);
+      }
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Synchronize browser back/forward buttons with currentView
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\/+/, '').toLowerCase();
+      const validViews = ['landing', 'auth', 'dashboard', 'upload', 'analysis', 'report', 'public-profile', 'recruiter'];
+      if (path && validViews.includes(path)) {
+        setCurrentView(path);
+      } else {
+        setCurrentView('landing');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Dynamic Activity Feed synchronized with actual claims and documents
   const dynamicActivities = useMemo(() => {
@@ -575,10 +793,7 @@ export const AppProvider = ({ children }) => {
     }
 
     if (acts.length === 0) {
-      if (isRealUser || !user?.isDemo) {
-        return [];
-      }
-      return verificationActivityMock;
+      return [];
     }
     return acts;
   }, [claims, documents, user?.isDemo, user?.id, analysisMeta]);
@@ -610,163 +825,7 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const handleLogin = async (role = 'individual', email = '', name = '') => {
-    setIsLoading(true);
-    const targetEmail = email.trim();
-    const targetName = name.trim();
-
-    if (backendStatus === 'connected' && targetEmail) {
-      try {
-        let profile = null;
-        try {
-          profile = await api.getUserByEmail(targetEmail);
-        } catch (err) {
-          if (err.status === 404) {
-            profile = await api.createUser({
-              name: targetName || (role === 'recruiter' ? 'Recruiting Team' : 'Verified Candidate'),
-              email: targetEmail,
-              role: role,
-              headline: role === 'recruiter' ? 'Talent Acquisition Lead' : 'Software Professional'
-            });
-          } else {
-            throw err;
-          }
-        }
-
-        if (profile) {
-          const realUser = {
-            id: profile.id,
-            name: profile.name,
-            email: profile.email,
-            role: profile.role,
-            headline: profile.headline || (role === 'recruiter' ? 'Talent Acquisition Lead' : 'Software Professional'),
-            summary: profile.summary || '',
-            avatarUrl: profile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
-            trustScore: 0,
-            verifiedCount: 0,
-            flaggedCount: 0,
-            unsupportedCount: 0,
-            verificationDate: 'Today',
-            isDemo: false
-          };
-          setUser(realUser);
-          try {
-            localStorage.setItem('credverify_user_profile', JSON.stringify(realUser));
-          } catch (e) {}
-          setDocuments([]);
-          setClaims([]);
-          setCategoryScores([]);
-          setAnalysisMeta(null);
-          try {
-            localStorage.removeItem('credverify_category_scores');
-            localStorage.removeItem('credverify_analysis_meta');
-          } catch (e) {}
-          setActiveDocument(null);
-          await syncUserBackendData(profile.id);
-        }
-      } catch (err) {
-        console.warn('Login backend error:', err);
-      }
-    } else if (targetEmail) {
-      const localUser = {
-        name: targetName || 'Candidate',
-        email: targetEmail,
-        role: role,
-        trustScore: 0,
-        isDemo: false
-      };
-      setUser(localUser);
-      try {
-        localStorage.setItem('credverify_user_profile', JSON.stringify(localUser));
-        localStorage.removeItem('credverify_category_scores');
-        localStorage.removeItem('credverify_analysis_meta');
-      } catch (e) {}
-      setDocuments([]);
-      setClaims([]);
-      setCategoryScores([]);
-      setAnalysisMeta(null);
-    }
-
-    setAuthRole(role);
-    setIsLoggedIn(true);
-    setIsLoading(false);
-    showToast(`Signed in as ${role === 'recruiter' ? 'Recruiter' : 'Candidate'}!`, 'success');
-    setCurrentView(role === 'recruiter' ? 'recruiter' : 'dashboard');
-  };
-
-  const handleSignUp = async ({ name, email, role }) => {
-    setIsLoading(true);
-    try {
-      const targetName = name.trim() || 'Candidate';
-      const targetEmail = email.trim();
-      if (backendStatus === 'connected') {
-        const profile = await api.createUser({
-          name: targetName,
-          email: targetEmail,
-          role: role,
-          headline: role === 'recruiter' ? 'Technical Recruiter' : 'Professional'
-        });
-
-        const realUser = {
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
-          role: profile.role,
-          headline: profile.headline || 'Profile Created',
-          avatarUrl: profile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
-          trustScore: 0,
-          verifiedCount: 0,
-          flaggedCount: 0,
-          unsupportedCount: 0,
-          verificationDate: 'Today',
-          isDemo: false
-        };
-        setUser(realUser);
-        try {
-          localStorage.setItem('credverify_user_profile', JSON.stringify(realUser));
-        } catch (e) {}
-        setDocuments([]);
-        setClaims([]);
-        setCategoryScores([]);
-        setAnalysisMeta(null);
-        try {
-          localStorage.removeItem('credverify_category_scores');
-          localStorage.removeItem('credverify_analysis_meta');
-        } catch (e) {}
-        setActiveDocument(null);
-        showToast('Account registered successfully on CredVerify Backend!', 'success');
-      } else {
-        const localUser = {
-          name: targetName,
-          email: targetEmail,
-          role: role,
-          trustScore: 0,
-          isDemo: false
-        };
-        setUser(localUser);
-        try {
-          localStorage.setItem('credverify_user_profile', JSON.stringify(localUser));
-          localStorage.removeItem('credverify_category_scores');
-          localStorage.removeItem('credverify_analysis_meta');
-        } catch (e) {}
-        setDocuments([]);
-        setClaims([]);
-        setCategoryScores([]);
-        setAnalysisMeta(null);
-        showToast('Account registered locally (Backend offline).', 'info');
-      }
-
-      setAuthRole(role);
-      setIsLoggedIn(true);
-      setCurrentView(role === 'recruiter' ? 'recruiter' : 'dashboard');
-    } catch (err) {
-      showToast(err.message || 'Registration error. Please check your inputs.', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
+  const clearPreviousUserState = () => {
     try {
       localStorage.removeItem('credverify_user_profile');
       localStorage.removeItem('credverify_documents');
@@ -775,15 +834,150 @@ export const AppProvider = ({ children }) => {
       localStorage.removeItem('credverify_category_scores');
       localStorage.removeItem('credverify_analysis_meta');
     } catch (e) {}
-    setUser(currentUserMock);
-    setDocuments(uploadedDocumentsMock);
-    setClaims(claimsAnalysisMock);
-    setActiveDocument(uploadedDocumentsMock[0] || null);
-    setCategoryScores(categoryScoresMock);
+    setUser(null);
+    setDocuments([]);
+    setClaims([]);
+    setActiveDocument(null);
+    setCategoryScores([]);
     setAnalysisMeta(null);
+    setCredentials([]);
+  };
+
+  const handleLogin = async (role = 'individual', email = '', password = '') => {
+    setIsLoading(true);
+    const targetEmail = (email || '').trim();
+    if (!targetEmail) {
+      setIsLoading(false);
+      showToast('Please enter your email address.', 'warning');
+      return;
+    }
+    if (!password) {
+      setIsLoading(false);
+      showToast('Please enter your password.', 'warning');
+      return;
+    }
+
+    try {
+      const profile = await api.loginUser({
+        email: targetEmail,
+        password: password
+      });
+
+      if (!profile || !profile.id) {
+        throw new Error('Could not authenticate user profile.');
+      }
+
+      // 1. Wipe previous user's client-side state completely
+      clearPreviousUserState();
+
+      // 2. Set new authenticated user
+      const realUser = {
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role || role,
+        headline: profile.headline || (role === 'recruiter' ? 'Talent Acquisition Lead' : 'Software Professional'),
+        summary: profile.summary || '',
+        avatarUrl: profile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+        trustScore: null,
+        verifiedCount: 0,
+        flaggedCount: 0,
+        unsupportedCount: 0,
+        verificationDate: 'Today',
+        isDemo: false
+      };
+
+      setUser(realUser);
+      setIsLoggedIn(true);
+      setAuthRole(profile.role || role);
+      try {
+        localStorage.setItem('credverify_user_profile', JSON.stringify(realUser));
+      } catch (e) {}
+
+      // 3. Sync ONLY this user's documents and claims from backend
+      await syncUserBackendData(profile.id);
+
+      showToast(`Signed in successfully as ${profile.name}!`, 'success');
+      navigateTo(profile.role === 'recruiter' ? 'recruiter' : 'dashboard');
+    } catch (err) {
+      console.warn('Sign In error:', err);
+      const msg = err.status === 401 ? 'Invalid email or password.' : (err.message || 'Sign In failed.');
+      showToast(msg, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignUp = async ({ name, email, password, role = 'individual' }) => {
+    setIsLoading(true);
+    const targetName = (name || '').trim() || 'Candidate';
+    const targetEmail = (email || '').trim();
+    if (!targetEmail) {
+      setIsLoading(false);
+      showToast('Please enter a valid email address.', 'warning');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setIsLoading(false);
+      showToast('Password must be at least 6 characters.', 'warning');
+      return;
+    }
+
+    try {
+      const profile = await api.createUser({
+        name: targetName,
+        email: targetEmail,
+        password: password,
+        role: role,
+        headline: role === 'recruiter' ? 'Technical Recruiter' : 'Verified Professional'
+      });
+
+      if (!profile || !profile.id) {
+        throw new Error('Account creation failed.');
+      }
+
+      // 1. Wipe previous user's client-side state completely
+      clearPreviousUserState();
+
+      // 2. Set new registered user
+      const realUser = {
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role,
+        headline: profile.headline || 'Profile Created',
+        avatarUrl: profile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+        trustScore: null,
+        verifiedCount: 0,
+        flaggedCount: 0,
+        unsupportedCount: 0,
+        verificationDate: 'Today',
+        isDemo: false
+      };
+
+      setUser(realUser);
+      setIsLoggedIn(true);
+      setAuthRole(profile.role);
+      try {
+        localStorage.setItem('credverify_user_profile', JSON.stringify(realUser));
+      } catch (e) {}
+
+      showToast(`Account created! Welcome, ${realUser.name}.`, 'success');
+      navigateTo(role === 'recruiter' ? 'recruiter' : 'dashboard');
+    } catch (err) {
+      console.warn('Sign Up error:', err);
+      const msg = err.status === 409 ? `Email '${targetEmail}' is already registered. Please Sign In.` : (err.message || 'Registration error.');
+      showToast(msg, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    clearPreviousUserState();
     setIsLoggedIn(false);
-    showToast('Logged out of session.', 'info');
-    setCurrentView('landing');
+    showToast('Signed out of session.', 'info');
+    navigateTo('landing');
   };
 
   // Client-side category detection matching standard CredVerify document categories
@@ -830,7 +1024,7 @@ export const AppProvider = ({ children }) => {
         return existingDoc;
       }
 
-      if (backendStatus === 'connected') {
+      if (backendStatus !== 'offline') {
         // If active user is supposedly real, verify it actually exists on the backend
         if (!isMockOrDemo && activeUser?.id) {
           try {
@@ -867,6 +1061,7 @@ export const AppProvider = ({ children }) => {
               summary: '',
               avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
               trustScore: null,
+              profileCompletion: 0,
               verifiedCount: 0,
               flaggedCount: 0,
               unsupportedCount: 0,
@@ -898,6 +1093,7 @@ export const AppProvider = ({ children }) => {
           const categoryToSend = newDoc.category || detectDocumentCategory(rawFile.name);
           try {
             backendResult = await api.uploadDocument(rawFile, activeUser.id, categoryToSend);
+            setBackendStatus('connected');
           } catch (uploadErr) {
             // If user ID was invalid or not found, auto-provision a fresh user and retry once
             const errMsg = String(uploadErr?.message || '').toLowerCase();
@@ -921,6 +1117,7 @@ export const AppProvider = ({ children }) => {
                 summary: '',
                 avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
                 trustScore: null,
+                profileCompletion: 0,
                 verifiedCount: 0,
                 flaggedCount: 0,
                 unsupportedCount: 0,
@@ -941,6 +1138,7 @@ export const AppProvider = ({ children }) => {
               setCategoryScores([]);
               setAnalysisMeta(null);
               backendResult = await api.uploadDocument(rawFile, fresh.id, categoryToSend);
+              setBackendStatus('connected');
             } else {
               throw uploadErr;
             }
@@ -955,6 +1153,7 @@ export const AppProvider = ({ children }) => {
             file_size_bytes: sizeBytes,
             mime_type: 'application/pdf'
           });
+          setBackendStatus('connected');
         } else {
           // Real user session without real file -> do not invent dummy records!
           setIsUploading(false);
@@ -1182,7 +1381,7 @@ export const AppProvider = ({ children }) => {
       });
     };
 
-    if (isBackendDoc && backendStatus === 'connected') {
+    if (isBackendDoc) {
       try {
         await api.deleteDocument(docId, effectiveUserId);
       } catch (err) {
@@ -1345,54 +1544,12 @@ export const AppProvider = ({ children }) => {
 
     setIsAnalyzing(true);
     setAnalysisProgress(15);
-    // Clear any previous claims so fresh analysis results are evaluated.
-    setClaims([]);
-
-    if (options.returnToReport) {
-      navigateTo('report');
-    } else {
-      navigateTo('analysis');
+    // Do NOT wipe claims to empty array on re-analysis so UI doesn't flash empty
+    if (!claims || claims.length === 0) {
+      setClaims([]);
     }
 
     setActiveDocument(docToAnalyze);
-
-    // Handle case where NO documents exist at all
-    if (!docToAnalyze) {
-      const zeroScores = [
-        { category: "Identity Consistency", score: 50, status: "Under Review", description: "No documents uploaded." },
-        { category: "Education Consistency", score: 50, status: "Under Review", description: "No documents uploaded." },
-        { category: "Work Experience", score: 50, status: "Under Review", description: "No documents uploaded." },
-        { category: "Certifications", score: 50, status: "Under Review", description: "No documents uploaded." }
-      ];
-      setClaims([]);
-      setCategoryScores(zeroScores);
-      setUser(prev => {
-        const updated = {
-          ...prev,
-          trustScore: 40,
-          verifiedCount: 0,
-          flaggedCount: 0,
-          unsupportedCount: 0,
-          verificationDate: 'Today'
-        };
-        try { localStorage.setItem('credverify_user_profile', JSON.stringify(updated)); } catch (e) {}
-        return updated;
-      });
-      setAnalysisMeta({
-        extractionMethod: 'zero_documents',
-        isFallback: false,
-        analyzedDocName: 'None',
-        trustScore: 40,
-        categoryScores: zeroScores
-      });
-      try {
-        localStorage.removeItem('credverify_analysis_meta');
-        localStorage.removeItem('credverify_category_scores');
-      } catch (e) {}
-      setAnalysisProgress(100);
-      setIsAnalyzing(false);
-      return;
-    }
 
     const isBackendDoc = Boolean(
       docToAnalyze?.id && 
@@ -1401,191 +1558,139 @@ export const AppProvider = ({ children }) => {
       (docToAnalyze.id.includes('-') || docToAnalyze.id.length > 20)
     );
 
-    if (isBackendDoc && backendStatus === 'connected') {
-      try {
-        // Stage 1: Text extraction
-        setAnalysisProgress(25);
-        await new Promise(r => setTimeout(r, 30));
-
-        // Stage 2: Processing & API Call
-        setAnalysisProgress(50);
-        const result = await api.analyzeDocument(docToAnalyze.id);
-        
-        // Stage 3: Discrepancy & Claims evaluation
-        setAnalysisProgress(75);
-        await new Promise(r => setTimeout(r, 30));
-
-        // Stage 4: Apply results EXCLUSIVELY from latest backend analysis response
-        const newClaims = Array.isArray(result.claims) ? result.claims.map(c => ({
-          id: c.id,
-          user_id: c.user_id,
-          userId: c.user_id,
-          category: c.category,
-          claimText: c.claim_text || c.claimText,
-          claim_text: c.claim_text || c.claimText,
-          status: c.status,
-          confidence_pct: c.confidence_pct,
-          confidence: c.confidence || (c.confidence_pct != null ? `${c.confidence_pct}%` : 'N/A'),
-          matchedDocument: c.matched_document || c.matchedDocument,
-          matched_document: c.matched_document || c.matchedDocument,
-          matched_document_id: c.matched_document_id || c.matchedDocumentId || null,
-          details: c.details,
-          source_document_id: c.source_document_id
-        })) : [];
-        setClaims(newClaims);
-        try {
-          localStorage.setItem('credverify_claims', JSON.stringify(newClaims));
-        } catch (e) {}
-
-        // Fetch fresh backend documents to ensure counts and statuses are synchronized
-        try {
-          if (effectiveUserId) {
-            const freshDocs = await api.getUserDocuments(effectiveUserId);
-            if (Array.isArray(freshDocs)) {
-              setDocuments(freshDocs.map(formatBackendDoc));
-            }
-          }
-        } catch (e) {}
-
-        const isGenericName = (n) => !n || ['verified candidate', 'candidate', 'new candidate', 'user', 'priyan sharma'].includes(n.trim().toLowerCase());
-
-        const docNameClean = (docToAnalyze.name || docToAnalyze.original_name || '')
-          .replace(/\.[^/.]+$/, '')
-          .replace(/[_.-]+/g, ' ')
-          .replace(/\b(resume|cv|updated|final|doc|v\d+)\b/gi, '')
-          .trim();
-
-        const candidateNameResolved = 
-          (result.candidate_name && !isGenericName(result.candidate_name) ? result.candidate_name : null) ||
-          (user?.name && !isGenericName(user.name) ? user.name : null) ||
-          (docNameClean && !isGenericName(docNameClean) ? docNameClean : null) ||
-          result.candidate_name ||
-          'Verified Candidate';
-
-        const categoryScoresResolved = (result.metrics?.category_scores && result.metrics.category_scores.length > 0)
-          ? result.metrics.category_scores
-          : [];
-
-        // STRICT REQUIREMENT: trustScore MUST come exclusively from latest backend response
-        const trustScoreResolved = (result.metrics?.trust_score !== undefined && result.metrics?.trust_score !== null)
-          ? result.metrics.trust_score
-          : (result.metrics?.verified_count === 0 ? 45 : 50);
-
-        setCategoryScores(categoryScoresResolved);
-        try {
-          localStorage.setItem('credverify_category_scores', JSON.stringify(categoryScoresResolved));
-        } catch (e) {}
-
-        setUser(prev => {
-          const updated = {
-            ...prev,
-            name: candidateNameResolved,
-            trustScore: trustScoreResolved,
-            verifiedCount: result.metrics?.verified_count ?? 0,
-            flaggedCount: result.metrics?.mismatch_count ?? 0,
-            unsupportedCount: result.metrics?.unsupported_count ?? 0,
-            verificationDate: 'Today'
-          };
-          try {
-            localStorage.setItem('credverify_user_profile', JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
-
-        const metaObj = {
-          extractionMethod: result.extraction_method,
-          textSnippet: result.extracted_text_snippet,
-          isFallback: result.extraction_method === 'metadata_fallback',
-          analyzedDocId: docToAnalyze.id,
-          analyzedDocName: docToAnalyze.name || docToAnalyze.original_name,
-          candidateName: candidateNameResolved,
-          trustScore: trustScoreResolved,
-          categoryScores: categoryScoresResolved
-        };
-        setAnalysisMeta(metaObj);
-        try {
-          localStorage.setItem('credverify_analysis_meta', JSON.stringify(metaObj));
-        } catch (e) {}
-
-        setAnalysisProgress(100);
-        setIsAnalyzing(false);
-        showToast(`AI Credential Verification complete for ${docToAnalyze.name || docToAnalyze.original_name}!`, 'success');
-        return;
-      } catch (err) {
-        console.error('Backend analysis error:', err);
-        showToast(`Verification analysis error: ${err.message || 'Server error'}`, 'error');
-        setIsAnalyzing(false);
-        setAnalysisProgress(0);
-        return;
-      }
+    if (!isBackendDoc) {
+      setIsAnalyzing(false);
+      setAnalysisProgress(0);
+      showToast('Document requires backend verification service.', 'warning');
+      return;
     }
 
-    // Fallback simulation (when backend is offline or analyzing mock/simulated item)
-    const simulatedUnsupported = [
-      {
-        id: 'sim_1',
-        category: 'Education',
-        claimText: 'Degree & Academic Qualifications',
-        status: 'Unsupported',
-        confidence_pct: 25,
-        matchedDocument: 'No supporting document uploaded',
-        details: 'No supporting degree or marksheet document found among uploaded credentials.'
-      },
-      {
-        id: 'sim_2',
-        category: 'Experience',
-        claimText: 'Professional Experience & Tenure Record',
-        status: 'Unsupported',
-        confidence_pct: 25,
-        matchedDocument: 'No supporting document uploaded',
-        details: 'No experience or relieving letter uploaded to substantiate employment history.'
-      },
-      {
-        id: 'sim_3',
-        category: 'Certifications',
-        claimText: 'Professional Certifications & Licenses',
-        status: 'Unsupported',
-        confidence_pct: 20,
-        matchedDocument: 'No supporting document uploaded',
-        details: 'No certification badge or certificate document uploaded.'
-      }
-    ];
-    setClaims(simulatedUnsupported);
-    const simulatedCategoryScores = [
-      { category: "Identity Consistency", score: 50, status: "Under Review", description: "Requires primary document proof." },
-      { category: "Education Consistency", score: 50, status: "Under Review", description: "Requires supporting degree/marksheet." },
-      { category: "Work Experience", score: 50, status: "Under Review", description: "Requires experience or relieving letter." },
-      { category: "Certifications", score: 50, status: "Under Review", description: "Requires certification badge." }
-    ];
-    setCategoryScores(simulatedCategoryScores);
-    setUser(prev => ({
-      ...prev,
-      trustScore: 45,
-      verifiedCount: 0,
-      flaggedCount: 0,
-      unsupportedCount: 3,
-      verificationDate: 'Today'
-    }));
-    setAnalysisMeta({
-      extractionMethod: 'demo_fallback',
-      isFallback: true,
-      analyzedDocName: docToAnalyze?.name || 'Sample Resume',
-      trustScore: 45,
-      categoryScores: simulatedCategoryScores
-    });
+    try {
+      // Stage 1: Text extraction
+      setAnalysisProgress(30);
 
-    let current = 25;
-    const interval = setInterval(() => {
-      current += 25;
-      if (current >= 100) {
-        clearInterval(interval);
-        setAnalysisProgress(100);
-        setIsAnalyzing(false);
-        showToast('AI Credential Verification complete (Demo Mode)!', 'info');
-      } else {
-        setAnalysisProgress(current);
-      }
-    }, 400);
+      // Stage 2: Processing & API Call
+      setAnalysisProgress(60);
+      const result = await api.analyzeDocument(docToAnalyze.id);
+      setBackendStatus('connected');
+      
+      // Stage 3: Discrepancy & Claims evaluation
+      setAnalysisProgress(85);
+
+      // Stage 4: Apply results EXCLUSIVELY from latest backend analysis response
+      const newClaims = Array.isArray(result.claims) ? result.claims.map(c => ({
+        id: c.id,
+        user_id: c.user_id,
+        userId: c.user_id,
+        category: c.category,
+        claimText: c.claim_text || c.claimText,
+        claim_text: c.claim_text || c.claimText,
+        status: c.status,
+        confidence_pct: c.confidence_pct,
+        confidence: c.confidence || (c.confidence_pct != null ? `${c.confidence_pct}%` : 'N/A'),
+        matchedDocument: c.matched_document || c.matchedDocument,
+        matched_document: c.matched_document || c.matchedDocument,
+        matched_document_id: c.matched_document_id || c.matchedDocumentId || null,
+        details: c.details,
+        source_document_id: c.source_document_id
+      })) : [];
+
+      setClaims(newClaims);
+      try {
+        localStorage.setItem('credverify_claims', JSON.stringify(newClaims));
+      } catch (e) {}
+
+      const isGenericName = (n) => !n || ['verified candidate', 'candidate', 'new candidate', 'user', 'priyan sharma'].includes(n.trim().toLowerCase());
+
+      const docNameClean = (docToAnalyze.name || docToAnalyze.original_name || '')
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[_.-]+/g, ' ')
+        .replace(/\b(resume|cv|updated|final|doc|v\d+)\b/gi, '')
+        .trim();
+
+      const candidateNameResolved = 
+        (result.candidate_name && !isGenericName(result.candidate_name) ? result.candidate_name : null) ||
+        (user?.name && !isGenericName(user.name) ? user.name : null) ||
+        (docNameClean && !isGenericName(docNameClean) ? docNameClean : null) ||
+        result.candidate_name ||
+        'Verified Candidate';
+
+      const categoryScoresResolved = (result.metrics?.category_scores && result.metrics.category_scores.length > 0)
+        ? result.metrics.category_scores
+        : [];
+
+      // STRICT REQUIREMENT: trustScore and metrics MUST come exclusively from latest backend response
+      const trustScoreResolved = (result.metrics?.trust_score !== undefined && result.metrics?.trust_score !== null)
+        ? result.metrics.trust_score
+        : 0;
+
+      const verifiedCount = result.metrics?.verified_count ?? 0;
+      const flaggedCount = result.metrics?.mismatch_count ?? 0;
+      const unsupportedCount = result.metrics?.unsupported_count ?? 0;
+
+      setCategoryScores(categoryScoresResolved);
+      try {
+        localStorage.setItem('credverify_category_scores', JSON.stringify(categoryScoresResolved));
+      } catch (e) {}
+
+      setUser(prev => {
+        const updated = {
+          ...(prev || {}),
+          name: candidateNameResolved,
+          trustScore: trustScoreResolved,
+          verifiedCount,
+          flaggedCount,
+          unsupportedCount,
+          verificationDate: 'Today'
+        };
+        try {
+          localStorage.setItem('credverify_user_profile', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+
+      const metaObj = {
+        extractionMethod: result.extraction_method,
+        textSnippet: result.extracted_text_snippet,
+        isFallback: false,
+        analyzedDocId: docToAnalyze.id,
+        analyzedDocName: docToAnalyze.name || docToAnalyze.original_name,
+        candidateName: candidateNameResolved,
+        trustScore: trustScoreResolved,
+        categoryScores: categoryScoresResolved
+      };
+      setAnalysisMeta(metaObj);
+      try {
+        localStorage.setItem('credverify_analysis_meta', JSON.stringify(metaObj));
+      } catch (e) {}
+
+      // Fetch fresh backend documents to ensure counts and statuses are synchronized immediately
+      try {
+        const syncUserId = effectiveUserId || (result.claims && result.claims[0]?.user_id);
+        if (syncUserId) {
+          const freshDocs = await api.getUserDocuments(syncUserId);
+          if (Array.isArray(freshDocs)) {
+            const formattedDocs = freshDocs.map(formatBackendDoc);
+            setDocuments(formattedDocs);
+            try {
+              localStorage.setItem('credverify_documents', JSON.stringify(formattedDocs));
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+
+      setAnalysisProgress(100);
+      setIsAnalyzing(false);
+      navigateTo('report');
+      showToast(`AI Credential Verification complete for ${docToAnalyze.name || docToAnalyze.original_name}!`, 'success');
+      return;
+    } catch (err) {
+      console.error('Backend analysis error:', err);
+      showToast(`Verification analysis error: ${err.message || 'Server error'}`, 'error');
+      setIsAnalyzing(false);
+      setAnalysisProgress(0);
+      return;
+    }
   };
 
   return (

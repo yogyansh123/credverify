@@ -297,6 +297,15 @@ body {
   animation: pulseGlow 3s infinite ease-in-out;
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-slow {
+  animation: spin 1.5s linear infinite;
+}
+
 /* Trust Score Ring SVG - Fast 400ms transition */
 .trust-score-circle {
   transition: stroke-dashoffset 0.4s cubic-bezier(0.16, 1, 0.3, 1);

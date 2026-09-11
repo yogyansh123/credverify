@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export const LandingPage = () => {
-  const { navigateTo, handleLogin } = useApp();
+  const { navigateTo, isLoggedIn } = useApp();
 
   return (
     <div style={{ paddingBottom: '40px' }}>
@@ -79,8 +79,7 @@ export const LandingPage = () => {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '40px' }}>
             <button 
               onClick={() => {
-                handleLogin('individual');
-                navigateTo('dashboard');
+                navigateTo(isLoggedIn ? 'dashboard' : 'auth');
               }}
               className="btn btn-primary btn-lg"
             >
@@ -89,8 +88,7 @@ export const LandingPage = () => {
 
             <button 
               onClick={() => {
-                handleLogin('individual');
-                navigateTo('upload');
+                navigateTo(isLoggedIn ? 'upload' : 'auth');
               }}
               className="btn btn-secondary btn-lg"
             >
@@ -455,8 +453,7 @@ export const LandingPage = () => {
           <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
             <button 
               onClick={() => {
-                handleLogin('individual');
-                navigateTo('dashboard');
+                navigateTo(isLoggedIn ? 'dashboard' : 'auth');
               }}
               className="btn btn-primary btn-lg"
             >
@@ -464,7 +461,6 @@ export const LandingPage = () => {
             </button>
             <button 
               onClick={() => {
-                handleLogin('recruiter');
                 navigateTo('recruiter');
               }}
               className="btn btn-secondary btn-lg"

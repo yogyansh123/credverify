@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.user import UserCreate, UserResponse
-from app.services.user_service import create_user, get_user, get_user_by_email
+from app.schemas.user import UserCreate, UserLogin, UserResponse
+from app.services.user_service import create_user, get_user, get_user_by_email, authenticate_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -18,6 +18,18 @@ router = APIRouter(prefix="/users", tags=["Users"])
 def create_user_profile(payload: UserCreate, db: Session = Depends(get_db)):
     """Create a new user profile (individual candidate or recruiter)."""
     return create_user(db, payload)
+
+
+@router.post("/login", response_model=UserResponse)
+def login_user(payload: UserLogin, db: Session = Depends(get_db)):
+    """Authenticate an existing user with email and password."""
+    user = authenticate_user(db, payload.email, payload.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+    return user
 
 
 @router.get("", response_model=UserResponse)

@@ -19,12 +19,138 @@ import {
 import { useAnimatedScore } from '../hooks/useAnimatedScore';
 
 export const IndividualDashboard = () => {
-  const { user, documents, claims, activities, navigateTo, runVerificationAnalysis, hasResume, analysisMeta, showToast } = useApp();
+  const { 
+    user, 
+    documents, 
+    claims, 
+    activities, 
+    navigateTo, 
+    runVerificationAnalysis, 
+    hasResume, 
+    analysisMeta, 
+    showToast,
+    isLoggedIn 
+  } = useApp();
 
-  const hasVerificationData = Boolean(hasResume && analysisMeta && (analysisMeta.trustScore !== undefined && analysisMeta.trustScore !== null));
-  const rawScore = hasVerificationData ? (user.trustScore ?? analysisMeta.trustScore ?? 0) : 0;
+  const isRealAuthenticatedUser = Boolean(
+    isLoggedIn && 
+    user && 
+    user.id && 
+    !user.isDemo && 
+    user.name !== 'Priyan Sharma' &&
+    user.id !== 'usr_priyan_992' &&
+    !user.name?.toLowerCase().includes('priyan')
+  );
+
+  // Requirement 3: If there is no authenticated/current real user, show an appropriate empty/unauthenticated state
+  if (!isRealAuthenticatedUser) {
+    return (
+      <div style={{ maxWidth: '900px', margin: '60px auto 100px auto', padding: '0 24px' }}>
+        <div className="glass-card" style={{
+          padding: '48px 36px',
+          textAlign: 'center',
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%)',
+          borderRadius: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '20px',
+            boxShadow: '0 0 30px rgba(99, 102, 241, 0.4)'
+          }}>
+            <ShieldCheck size={36} color="#ffffff" />
+          </div>
+
+          <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#fff', marginBottom: '12px' }}>
+            Candidate Verification Dashboard
+          </h1>
+          <p style={{ color: '#94a3b8', fontSize: '1rem', maxWidth: '560px', margin: '0 auto 32px auto', lineHeight: 1.6 }}>
+            Sign in to access your personal verification dashboard, view verified credentials, and track your cryptographic trust score.
+          </p>
+
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
+            <button 
+              id="unauth-signin-btn"
+              onClick={() => navigateTo('auth')} 
+              className="btn btn-primary"
+              style={{ padding: '12px 28px', fontSize: '0.95rem' }}
+            >
+              Sign In to Your Account
+            </button>
+            <button 
+              id="unauth-upload-btn"
+              onClick={() => navigateTo('upload')} 
+              className="btn btn-outline"
+              style={{ padding: '12px 24px', fontSize: '0.95rem' }}
+            >
+              <UploadCloud size={16} /> Upload Resume as New Candidate
+            </button>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '16px',
+            textAlign: 'left',
+            paddingTop: '28px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+          }}>
+            <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', color: '#818cf8', fontWeight: 700, fontSize: '0.9rem' }}>
+                <CheckCircle2 size={16} /> Authentic Work History
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
+                Prove your employment tenure and roles with cross-referenced HR letters.
+              </p>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', color: '#10b981', fontWeight: 700, fontSize: '0.9rem' }}>
+                <Award size={16} /> Verified Certifications
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
+                Corroborate professional licenses and certifications against official certificates.
+              </p>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', color: '#38bdf8', fontWeight: 700, fontSize: '0.9rem' }}>
+                <Sparkles size={16} /> Cryptographic Trust Score
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
+                Generate a verifiable trust score to stand out to enterprise recruiters.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const hasVerificationData = Boolean(
+    hasResume && 
+    ((analysisMeta && analysisMeta.trustScore !== undefined && analysisMeta.trustScore !== null) || 
+     (user?.trustScore !== undefined && user?.trustScore !== null))
+  );
+  const rawScore = hasVerificationData ? (user.trustScore ?? analysisMeta?.trustScore ?? 0) : 0;
   const animatedScore = useAnimatedScore(rawScore, 400);
   const strokeDashoffset = hasVerificationData ? (283 - (283 * rawScore) / 100) : 283;
+
+  // Derive dynamic profile completion percentage from actual documents and verification state
+  const supportingDocsCount = (documents || []).filter(d => {
+    const cat = (d.category || '').toLowerCase();
+    const name = (d.name || d.original_name || '').toLowerCase();
+    return cat !== 'resume' && !name.includes('resume') && !name.includes('cv');
+  }).length;
+  const dynamicProfileCompletion = hasResume
+    ? Math.min(100, 25 + Math.min(75, supportingDocsCount * 25))
+    : 0;
+  const profileCompletionPercent = user?.profileCompletion || dynamicProfileCompletion;
 
   return (
     <div style={{ maxWidth: '1280px', margin: '40px auto', padding: '0 24px' }}>
@@ -48,7 +174,7 @@ export const IndividualDashboard = () => {
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <img 
-              src={user.avatarUrl} 
+              src={user.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250"} 
               alt={user.name}
               style={{
                 width: '72px',
@@ -64,17 +190,22 @@ export const IndividualDashboard = () => {
                 <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>
                   Welcome back, {user.name}
                 </h1>
-                <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <ShieldCheck size={12} /> Verified Profile
-                </span>
-                {user.id === 'usr_priyan_992' && (
-                  <span className="badge badge-neutral" style={{ fontSize: '0.65rem', letterSpacing: '0.5px' }}>
-                    SAMPLE DATA
+                {hasVerificationData && (user?.trustScore ?? 0) >= 65 ? (
+                  <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <ShieldCheck size={12} /> Verified Profile
+                  </span>
+                ) : hasVerificationData ? (
+                  <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertTriangle size={12} /> Needs Evidence
+                  </span>
+                ) : (
+                  <span className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <FileText size={12} /> Profile Setup
                   </span>
                 )}
               </div>
               <p style={{ color: '#94a3b8', fontSize: '0.95rem', marginTop: '4px' }}>
-                {user.headline}
+                {user.headline || 'Verified Professional'}
               </p>
             </div>
           </div>
@@ -109,14 +240,14 @@ export const IndividualDashboard = () => {
         <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#94a3b8' }}>
-              Profile Verification Strength: <strong style={{ color: '#fff' }}>{user.profileCompletion}% Complete</strong>
+              Profile Verification Strength: <strong style={{ color: '#fff' }}>{profileCompletionPercent}% Complete</strong>
             </span>
             <span style={{ fontSize: '0.75rem', color: '#818cf8', cursor: 'pointer' }} onClick={() => navigateTo('upload')}>
-              + Upload Remaining Publications / ID &rarr;
+              + Upload Supporting Credentials &rarr;
             </span>
           </div>
           <div style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{ width: `${user.profileCompletion}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #10b981)', borderRadius: '4px' }}></div>
+            <div style={{ width: `${profileCompletionPercent}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #10b981)', borderRadius: '4px' }}></div>
           </div>
         </div>
 

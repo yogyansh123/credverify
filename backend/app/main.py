@@ -58,12 +58,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from sqlalchemy import text
+
 # ---------------------------------------------------------------------------
 # Database – create all tables on startup (SQLite / dev only approach)
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    # Ensure password_hash column exists on users table if table was created previously
+    try:
+        with engine.connect() as conn:
+            if engine.dialect.name == "sqlite":
+                cursor = conn.execute(text("PRAGMA table_info(users)"))
+                cols = [row[1] for row in cursor.fetchall()]
+                if "password_hash" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
+                    conn.commit()
+            elif engine.dialect.name == "postgresql":
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
+                conn.commit()
+    except Exception as e:
+        print(f"[Warning] Auto-migration check: {e}")
     # Ensure uploads directory exists
     os.makedirs(settings.upload_dir, exist_ok=True)
 

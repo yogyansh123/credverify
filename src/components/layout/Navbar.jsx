@@ -22,7 +22,7 @@ export const Navbar = () => {
     navigateTo, 
     isLoggedIn, 
     authRole, 
-    handleLogin, 
+    setAuthRole,
     handleLogout,
     backendStatus,
     checkHealth
@@ -222,7 +222,10 @@ export const Navbar = () => {
             border: '1px solid rgba(255,255,255,0.1)'
           }}>
             <button
-              onClick={() => handleLogin('individual')}
+              onClick={() => {
+                setAuthRole('individual');
+                navigateTo(isLoggedIn ? 'dashboard' : 'landing');
+              }}
               style={{
                 background: authRole === 'individual' ? '#6366f1' : 'transparent',
                 color: authRole === 'individual' ? '#fff' : '#94a3b8',
@@ -241,7 +244,10 @@ export const Navbar = () => {
               <User size={12} /> Candidate
             </button>
             <button
-              onClick={() => handleLogin('recruiter')}
+              onClick={() => {
+                setAuthRole('recruiter');
+                navigateTo('recruiter');
+              }}
               style={{
                 background: authRole === 'recruiter' ? '#a855f7' : 'transparent',
                 color: authRole === 'recruiter' ? '#fff' : '#94a3b8',
