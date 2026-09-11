@@ -983,10 +983,13 @@ export const AppProvider = ({ children }) => {
   // Client-side category detection matching standard CredVerify document categories
   const detectDocumentCategory = (filename, fallbackCategory = 'Other Document') => {
     const fn = (filename || '').toLowerCase();
+    // Priority: Resume > Experience Letter > Degree/Marksheet > Certifications > Govt ID > Other
+    // Experience and Degree are checked BEFORE cert to prevent substring 'cert' inside
+    // 'Experience Certificate' or 'BTech Degree Certificate' from mis-classifying.
     if (/resume|cv|curriculum|biodata|bio_data/i.test(fn)) return 'Resume';
-    if (/aws|azure|gcp|cert|completion|badge|license|coursera|udemy|credly|pmp|cissp|comptia|scrum/i.test(fn)) return 'Certifications';
-    if (/degree|transcript|marksheet|diploma|graduation|btech|b\.tech|mtech|m\.tech|bachelor|master|semester|sem_|gradecard|grade_sheet|convocation|university/i.test(fn)) return 'Degree / Marksheet';
     if (/xornor|experience|internship|intern|trainee|relieving|offer|service_letter|service_cert|employment|recommendation|training/i.test(fn)) return 'Experience Letter';
+    if (/degree|transcript|marksheet|diploma|graduation|btech|b\.tech|mtech|m\.tech|bachelor|masters|master of|semester|sem_|gradecard|grade_sheet|convocation|university/i.test(fn)) return 'Degree / Marksheet';
+    if (/aws|azure|gcp|cert|badge|license|coursera|udemy|credly|pmp|cissp|comptia|scrum/i.test(fn)) return 'Certifications';
     if (/passport|national_id|aadhaar|aadhar|pan|driving|license|voter|gov_id|identity/i.test(fn)) return 'Government ID';
     if (/paper|publication|patent|journal|ieee/i.test(fn)) return 'Other Document';
     return fallbackCategory || 'Other Document';

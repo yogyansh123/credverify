@@ -25,15 +25,18 @@ def auto_detect_category(
     """
     fn = (filename or "").lower()
 
-    # 1. Filename keyword checks
+    # 1. Filename keyword checks — ordered from most-specific/unambiguous to least.
+    # Priority: Resume > Experience Letter > Degree/Marksheet > Certifications > Govt ID > Other
+    # This prevents substring matches like 'cert' inside 'Experience Certificate' or
+    # 'BTech Degree Certificate' from mis-classifying to Certifications.
     if any(k in fn for k in ["resume", "cv", "curriculum", "biodata", "bio_data"]):
         return "Resume"
-    if any(k in fn for k in ["aws", "azure", "gcp", "cert", "completion", "badge", "license", "coursera", "udemy", "credly", "pmp", "cissp", "comptia", "scrum"]):
-        return "Certifications"
-    if any(k in fn for k in ["degree", "transcript", "marksheet", "diploma", "graduation", "btech", "b.tech", "mtech", "m.tech", "bachelor", "master", "semester", "gradecard", "grade_sheet", "convocation", "university"]):
-        return "Degree / Marksheet"
     if any(k in fn for k in ["xornor", "experience", "internship", "intern", "trainee", "relieving", "offer", "service_letter", "service_cert", "employment", "recommendation", "training"]):
         return "Experience Letter"
+    if any(k in fn for k in ["degree", "transcript", "marksheet", "diploma", "graduation", "btech", "b.tech", "mtech", "m.tech", "bachelor", "masters", "master of", "semester", "gradecard", "grade_sheet", "convocation", "university"]):
+        return "Degree / Marksheet"
+    if any(k in fn for k in ["aws", "azure", "gcp", "cert", "badge", "license", "coursera", "udemy", "credly", "pmp", "cissp", "comptia", "scrum"]):
+        return "Certifications"
     if any(k in fn for k in ["passport", "national_id", "aadhaar", "aadhar", "pan", "driving", "license", "voter", "gov_id", "identity"]):
         return "Government ID"
     if any(k in fn for k in ["paper", "publication", "patent", "journal", "ieee"]):
@@ -49,12 +52,12 @@ def auto_detect_category(
                 if text:
                     if any(k in text for k in ["resume", "curriculum vitae", "summary of experience", "work history", "technical skills", "professional summary"]):
                         return "Resume"
-                    if any(k in text for k in ["certificate of completion", "certifies that", "has successfully completed", "amazon web services", "aws certified", "solutions architect", "cloud practitioner", "credential id"]):
+                    if any(k in text for k in ["to whomsoever it may concern", "relieving letter", "experience certificate", "internship certificate", "industrial training", "product management trainee", "worked with us", "period of employment", "training completion"]):
+                        return "Experience Letter"
+                    if any(k in text for k in ["certificate of completion", "certifies that", "amazon web services", "aws certified", "solutions architect", "cloud practitioner", "credential id"]):
                         return "Certifications"
                     if any(k in text for k in ["statement of marks", "grade card", "marksheet", "degree of bachelor", "bachelor of technology", "master of", "board of technical education", "semester examination", "cumulative grade", "cgpa", "sgpa", "provisional certificate"]):
                         return "Degree / Marksheet"
-                    if any(k in text for k in ["to whomsoever it may concern", "relieving letter", "experience certificate", "internship certificate", "industrial training", "product management trainee", "worked with us", "period of employment", "training completion"]):
-                        return "Experience Letter"
                     if any(k in text for k in ["government of india", "income tax department", "unique identification authority", "republic of india", "election commission", "driving licence", "passport"]):
                         return "Government ID"
                     if any(k in text for k in ["abstract", "proceedings", "published by", "patent", "ieee"]):
